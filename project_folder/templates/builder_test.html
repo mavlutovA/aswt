@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Конструктор Схем (Полностью Функциональный)</title>
+    <style>
+        /* --- CSS (Базовый стиль) --- */
+        body { font-family: Arial, sans-serif; margin: 0; display: flex; height: 100vh; background-color: #f8f8f8; color: #333; }
+        .sidebar { width: 250px; background-color: #eee; color: #333; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
+        .sidebar button { width: 100%; padding: 10px; margin-bottom: 10px; background-color: #007bff; border: none; color: white; font-size: 16px; cursor: pointer; }
+        .sidebar button:hover { background-color: #0056b3; }
+        .main-content { flex-grow: 1; padding: 20px; display: flex; flex-direction: column; }
+        
+        .circuit-display { 
+            flex-grow: 1; 
+            background-color: #222; /* Темный фон для лучшего контраста */
+            border: 1px solid #ddd;
+            border-radius: 8px; 
+            margin-bottom: 20px; 
+            padding: 10px; 
+            overflow: hidden; 
+            position: relative; 
+        }
+        
+        .gate-block { 
+            background-color: #333; 
+            padding: 10px; 
+            border-radius: 4px; 
+            color: #fff; 
+            border: 1px solid #555;
+            display: flex; 
+            justify-content: space-between;
+            align-items: center;
+            position: absolute; 
+            cursor: grab;
+            min-width: 80px;
+            z-index: 5; 
+        }
+        
+        /* --- Стили для портов и линий --- */
+        .port-container { position: relative; height: 100%; display: flex; align-items: center; }
+        .port {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #333; 
+            border: 2px solid #fff; 
+            cursor: crosshair;
+            z-index: 10; 
+        }
+        .port:hover { background-color: #00ffaa; } /* Цвет при наведении */
+        .input-port { margin-right: -15px; }
+        .output-port { margin-left: -15px; }
+
+        .input-block { background-color: #e57373; border-color: #d32f2f; } /* Красный */
+        .output-block { background-color: #81c784; border-color: #388e3c; } /* Зеленый */
+        .not-block { background-color: #555; border-color: #999; }
+
+        .result-area { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #eee; }
+
+        #svg-container {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            pointer-events: none; 
+            z-index: 1; 
+        }
+        .connection-line { stroke: #00ffaa; stroke-width: 3; } /* Цвет линий */ 
+
+        /* --- СТИЛИ ДЛЯ ИНТЕРАКТИВНЫХ ВХОДОВ --- */
+        .gate-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-grow: 1;
+        }
+        .gate-value {
+            background-color: #ccc;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background-color 0.2s;
+            pointer-events: auto; 
+            min-width: 10px;
+            text-align: center;
+        }
+        .gate-value.true {
+            background-color: #00cc00;
+            color: white;
+        }
+        .gate-value.false {
+            background-color: #cc0000;
+            color: white;
+        }
+
+        /* --- СТИЛЬ КОРЗИНЫ (НОВЫЙ ЭЛЕМЕНТ) --- */
+        #trash-can {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 250px;
+            height: 50px;
+            background-color: #444; /* Темно-серый по умолчанию */
+            color: #ccc;
+            border: 2px dashed #999;
+            border-radius: 5px;
+            text-align: center;
+            line-height: 50px;
+            font-weight: bold;
+            z-index: 100; 
+            pointer-events: none; 
+            opacity: 0.8;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .dragging-over-trash {
+            background-color: #ff5252 !important; /* Яркий красный при наведении */
+            border-color: white !important;
+            opacity: 1 !important;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h3>Блоки</h3>
+        <button onclick="addBlock('INPUT', 'A')">Add INPUT (A)</button>
+        <button onclick="addBlock('INPUT', 'B')">Add INPUT (B)</button>
+        <button onclick="addBlock('INPUT', 'C')">Add INPUT (C)</button>
+        <button onclick="addBlock('OUTPUT', 'Out 1')">Add OUTPUT</button>
+        
+        <hr style="border-top: 1px solid #ccc; margin: 15px 0;">
+        
+        <button onclick="addBlock('AND', 'AND')">Add AND</button>
+        <button onclick="addBlock('OR', 'OR')">Add OR</button>
+        <button onclick="addBlock('NOT', 'NOT')">Add NOT</button>
+        
+        <hr style="border-top: 1px solid #ccc; margin: 15px 0;">
+        
+        <button onclick="calculateInteractive()">Рассчитать (Интерактивный Режим)</button>
+        <button onclick="calculateTruthTable()">Построить Таблицу Истинности</button>
+        <button onclick="loadTestCircuit()">Загрузить Схему с Фото</button>
+        <button onclick="clearCircuit()">Очистить Схему</button>
+    </div>
+
+    <div class="main-content">
+        <h2>🛠️ Область Схемы (Перетащите, Соедините, Кликните для Ввода)</h2>
+        <div id="circuit-display" class="circuit-display">
+            <svg id="svg-container"></svg>
+            <div id="trash-can">TRASH CAN (Drop here to delete)</div> 
+        </div>
+
+        <div id="result-area" class="result-area">
+            <h3>Интерактивный Расчет / Таблица Истинности</h3>
+            <p>Результат появится здесь после расчета или переключения входов.</p>
+        </div>
+    </div>
+
+    <script>
+        // *** ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ - КРИТИЧЕСКИ ВАЖНО ***
+        let circuitData = {
+            circuit_structure: {},
+            connections: [],
+            input_state: {} 
+        };
+        let blockCounter = 0; 
+        const circuitDisplay = document.getElementById('circuit-display');
+        let svgContainer; 
+        let trashCan; // Новая переменная для корзины
+
+        let connectionStartPort = null; 
+        let currentTempLine = null;     
+        let selectedBlock = null;
+        let offset = { x: 0, y: 0 };
+
+
+        // --- 1. Вспомогательные функции ---
+
+        function ensureSvgContainer() {
+            let existingSvg = document.getElementById('svg-container');
+            if (existingSvg) {
+                svgContainer = existingSvg;
+                return;
+            }
+            svgContainer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgContainer.id = 'svg-container';
+            circuitDisplay.prepend(svgContainer);
+        }
+
+        function getPortCenter(portElement) {
+            const rect = portElement.getBoundingClientRect();
+            const containerRect = circuitDisplay.getBoundingClientRect();
+            
+            const absoluteX = (rect.left + rect.right) / 2;
+            const absoluteY = (rect.top + rect.bottom) / 2;
+            
+            return {
+                x: absoluteX - containerRect.left,
+                y: absoluteY - containerRect.top
+            };
+        }
+        
+        function updateAllLines() {
+            ensureSvgContainer();
+            svgContainer.innerHTML = '';
+            
+            circuitData.connections.forEach(conn => {
+                const startPort = document.getElementById(conn.from);
+                const endPort = document.getElementById(conn.to);
+                
+                if (startPort && endPort) {
+                    const startPos = getPortCenter(startPort);
+                    const endPos = getPortCenter(endPort);
+                    drawLine(startPos.x, startPos.y, endPos.x, endPos.y, `line-${conn.from}-${conn.to}`);
+                }
+            });
+        }
+        
+        function drawLine(x1, y1, x2, y2, id) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('id', id);
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+            line.setAttribute('class', 'connection-line');
+            svgContainer.appendChild(line);
+            return line;
+        }
+
+        function resetConnection() {
+            if (currentTempLine) {
+                 currentTempLine.remove();
+            }
+            connectionStartPort = null;
+            currentTempLine = null;
+        }
+        
+        function generateUniqueId(type) {
+            blockCounter++; 
+            return type[0] + blockCounter; 
+        }
+
+        // --- 2. ЛОГИКА ИНТЕРАКТИВНОГО ВВОДА ---
+        
+        function initializeInputValue(blockId, label, initialValue = 0) {
+            circuitData.input_state[label] = initialValue; 
+            
+            const valueDiv = document.createElement('div');
+            valueDiv.className = `gate-value ${initialValue === 1 ? 'true' : 'false'}`;
+            valueDiv.textContent = initialValue;
+            valueDiv.dataset.blockId = blockId;
+            valueDiv.onclick = (e) => {
+                e.stopPropagation(); 
+                toggleInputValue(label);
+            };
+            return valueDiv;
+        }
+
+        function toggleInputValue(label) {
+            const currentState = circuitData.input_state[label];
+            const newState = 1 - currentState; 
+            circuitData.input_state[label] = newState;
+
+            // Обновляем визуальное отображение
+            for (const id in circuitData.circuit_structure) {
+                if (circuitData.circuit_structure[id].label === label && circuitData.circuit_structure[id].type === 'INPUT') {
+                    const block = document.getElementById(id);
+                    if (block) {
+                        const valueDiv = block.querySelector('.gate-value');
+                        if (valueDiv) {
+                            valueDiv.textContent = newState;
+                            valueDiv.className = `gate-value ${newState === 1 ? 'true' : 'false'}`;
+                        }
+                    }
+                }
+            }
+            
+            calculateInteractive(); 
+        }
+
+        // --- 3. ЛОГИКА ДОБАВЛЕНИЯ И УДАЛЕНИЯ БЛОКОВ ---
+        
+        function createPortHTML(type, blockId, index) {
+            const portId = `${blockId}-${type}${index}`;
+            return `<div id="${portId}" class="port ${type}-port" data-block-id="${blockId}" data-port-type="${type}"></div>`;
+        }
+
+        function createGatePorts(type, blockId) {
+            let numInputs = 0;
+            let numOutputs = 0;
+            
+            if (type === 'INPUT') { numOutputs = 1; }
+            else if (type === 'OUTPUT') { numInputs = 1; }
+            else if (type === 'NOT') { numInputs = 1; numOutputs = 1; }
+            else if (['AND', 'OR'].includes(type)) { numInputs = 2; numOutputs = 1; }
+            
+            let inputsHTML = '<div class="port-container">';
+            for (let i = 0; i < numInputs; i++) {
+                inputsHTML += createPortHTML('input', blockId, i + 1);
+            }
+            inputsHTML += '</div>';
+
+            let outputsHTML = '<div class="port-container">';
+            for (let i = 0; i < numOutputs; i++) {
+                outputsHTML += createPortHTML('output', blockId, i + 1);
+            }
+            outputsHTML += '</div>';
+
+            return { inputsHTML, outputsHTML };
+        }
+
+        function addBlock(type, label) {
+            const id = generateUniqueId(type); 
+            
+            circuitData.circuit_structure[id] = { type: type, label: label };
+            
+            const { inputsHTML, outputsHTML } = createGatePorts(type, id);
+            
+            const block = document.createElement('div');
+            block.className = 'gate-block ' + type.toLowerCase() + '-block';
+            block.id = id;
+            
+            if (type === 'INPUT') {
+                const content = document.createElement('div');
+                content.className = 'gate-content';
+                const valueDiv = initializeInputValue(id, label);
+                content.appendChild(document.createTextNode(label)); 
+                content.appendChild(valueDiv); 
+                
+                // ИСПРАВЛЕНИЕ: Используем innerHTML для добавления HTML-строки портов
+                block.innerHTML = outputsHTML; 
+                block.prepend(content); 
+
+            } else {
+                block.innerHTML = inputsHTML + `<strong>${label}</strong>` + outputsHTML;
+            }
+            
+            block.style.left = '50px';
+            block.style.top = `${100 + (blockCounter * 20)}px`;
+
+            circuitDisplay.appendChild(block);
+        }
+        
+        function addBlockManual(id, type, label, x, y) {
+            const { inputsHTML, outputsHTML } = createGatePorts(type, id);
+            const block = document.createElement('div');
+            block.className = 'gate-block ' + type.toLowerCase() + '-block';
+            block.id = id;
+            
+            if (type === 'INPUT') {
+                const content = document.createElement('div');
+                content.className = 'gate-content';
+                const valueDiv = initializeInputValue(id, label); 
+                content.appendChild(document.createTextNode(label)); 
+                content.appendChild(valueDiv); 
+                
+                // ИСПРАВЛЕНИЕ: Используем innerHTML для добавления HTML-строки портов
+                block.innerHTML = outputsHTML;
+                block.prepend(content); 
+
+            } else {
+                block.innerHTML = inputsHTML + `<strong>${label}</strong>` + outputsHTML;
+            }
+            
+            block.style.left = `${x}px`;
+            block.style.top = `${y}px`;
+            circuitDisplay.appendChild(block);
+        }
+
+        function deleteBlock(blockId) {
+            // 1. Удаляем блок из DOM
+            const blockElement = document.getElementById(blockId);
+            if (blockElement) {
+                blockElement.remove();
+            }
+
+            // 2. Удаляем из структуры схемы
+            const blockLabel = circuitData.circuit_structure[blockId]?.label;
+            delete circuitData.circuit_structure[blockId];
+            
+            // Если это был INPUT, удаляем его из input_state
+            if (blockLabel) {
+                 delete circuitData.input_state[blockLabel];
+            }
+
+            // 3. Удаляем все связанные соединения
+            circuitData.connections = circuitData.connections.filter(conn => 
+                conn.from.startsWith(blockId) === false && conn.to.startsWith(blockId) === false
+            );
+
+            // 4. Обновляем линии и расчеты
+            updateAllLines();
+            calculateInteractive();
+            console.log(`Блок ${blockId} удален.`);
+        }
+        
+        // --- 4. ЛОГИКА СОЕДИНЕНИЙ и DRAG-AND-DROP ---
+        
+        function setupEventListeners() {
+            trashCan = document.getElementById('trash-can'); // Инициализация корзины
+            
+            circuitDisplay.addEventListener('mousedown', function(e) {
+                if (e.target.classList.contains('port')) {
+                    const portElement = e.target;
+                    const portType = portElement.dataset.portType;
+
+                    if (!connectionStartPort && portType === 'output') {
+                        ensureSvgContainer(); 
+                        connectionStartPort = portElement;
+                        const startPos = getPortCenter(connectionStartPort);
+                        currentTempLine = drawLine(startPos.x, startPos.y, startPos.x, startPos.y, 'temp-line');
+                        e.stopPropagation(); 
+                        return;
+                    }
+                }
+                handleDragMousedown(e); 
+            });
+
+            circuitDisplay.addEventListener('mouseup', function(e) {
+                if (e.target.classList.contains('port') && connectionStartPort) {
+                    handlePortMouseupEnd(e.target);
+                }
+                
+                if (selectedBlock) {
+                    if (trashCan.classList.contains('dragging-over-trash')) {
+                        deleteBlock(selectedBlock.id);
+                    }
+                    selectedBlock.style.cursor = 'grab';
+                }
+                
+                // Сброс состояния корзины
+                if (trashCan) {
+                    trashCan.style.pointerEvents = 'none';
+                    trashCan.style.opacity = '0.8';
+                    trashCan.classList.remove('dragging-over-trash');
+                }
+                selectedBlock = null;
+            });
+            
+            circuitDisplay.addEventListener('mousemove', function(e) {
+                if (currentTempLine) {
+                    const containerRect = circuitDisplay.getBoundingClientRect();
+                    const x2 = e.clientX - containerRect.left; 
+                    const y2 = e.clientY - containerRect.top;
+                    
+                    currentTempLine.setAttribute('x2', x2);
+                    currentTempLine.setAttribute('y2', y2);
+                }
+                
+                if (selectedBlock) {
+                    const containerRect = circuitDisplay.getBoundingClientRect();
+                    let newX = e.clientX - containerRect.left - offset.x;
+                    let newY = e.clientY - containerRect.top - offset.y;
+                    
+                    newX = Math.max(0, Math.min(newX, containerRect.width - selectedBlock.offsetWidth));
+                    newY = Math.max(0, Math.min(newY, containerRect.height - selectedBlock.offsetHeight));
+                    
+                    selectedBlock.style.left = newX + 'px';
+                    selectedBlock.style.top = newY + 'px';
+                    
+                    // Проверка наведения на корзину
+                    const clientX = e.clientX;
+                    const clientY = e.clientY;
+                    const trashRect = trashCan.getBoundingClientRect();
+
+                    if (clientX > trashRect.left && clientX < trashRect.right && 
+                        clientY > trashRect.top && clientY < trashRect.bottom) {
+                        trashCan.classList.add('dragging-over-trash');
+                    } else {
+                        trashCan.classList.remove('dragging-over-trash');
+                    }
+
+                    updateAllLines();
+                }
+            });
+        }
+        
+        function handlePortMouseupEnd(portElement) {
+            const portType = portElement.dataset.portType; 
+
+            if (connectionStartPort) {
+                const startType = connectionStartPort.dataset.portType;
+                const endType = portType;
+                
+                if (startType === 'output' && endType === 'input' && connectionStartPort.id !== portElement.id) {
+                    
+                    const startBlockId = connectionStartPort.dataset.blockId;
+                    const endBlockId = portElement.dataset.blockId;
+                    
+                    if (startBlockId === endBlockId) {
+                         resetConnection();
+                         return;
+                    }
+
+                    circuitData.connections.push({
+                        from: connectionStartPort.id,
+                        to: portElement.id
+                    });
+                    
+                    resetConnection();
+                    updateAllLines();
+                    calculateInteractive();
+                    
+                } else {
+                    resetConnection();
+                }
+            }
+        }
+        
+        function handleDragMousedown(e) {
+            if (connectionStartPort) {
+                resetConnection();
+            }
+
+            if (e.target.closest('.gate-block') && !e.target.classList.contains('gate-value') && !e.target.classList.contains('port')) {
+                selectedBlock = e.target.closest('.gate-block');
+                const rect = selectedBlock.getBoundingClientRect();
+                offset = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+                selectedBlock.style.cursor = 'grabbing';
+                
+                // Активируем корзину
+                if (trashCan) {
+                    trashCan.style.pointerEvents = 'auto'; 
+                    trashCan.style.opacity = '1';
+                }
+                
+            } else if (!e.target.closest('.gate-block')) {
+                 selectedBlock = null; 
+            }
+        }
+
+        // --- 5. AJAX И РАСЧЕТ ---
+
+        function calculateInteractive() {
+             if (Object.keys(circuitData.circuit_structure).length === 0) {
+                 document.getElementById('result-area').innerHTML = '<h3>Интерактивный Расчет</h3><p>Схема пуста.</p>';
+                 return;
+            }
+            
+            document.getElementById('result-area').innerHTML = '<h3>Расчет...</h3>';
+            
+            const calculationData = {
+                circuit_structure: circuitData.circuit_structure,
+                connections: circuitData.connections,
+                input_state: circuitData.input_state 
+            };
+
+            fetch('/calculate_interactive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(calculationData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('result-area').innerHTML = 
+                        `<h3 style="color:red;">Ошибка Расчета</h3><p>${data.error}</p>`;
+                } else {
+                    renderInteractiveResult(data.input_values, data.output_values);
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                document.getElementById('result-area').innerHTML = '<h3 style="color:red;">Произошла ошибка при отправке запроса.</h3>';
+            });
+        }
+        
+        function renderInteractiveResult(inputValues, outputValues) {
+             let html = '<h3>Интерактивный Расчет</h3>';
+             html += '<table><thead><tr><th>Вход</th><th>Значение</th><th>Выход</th><th>Значение</th></tr></thead><tbody>';
+             
+             const inputLabels = Object.keys(inputValues);
+             const outputLabels = Object.keys(outputValues);
+             const maxLen = Math.max(inputLabels.length, outputLabels.length);
+
+             for (let i = 0; i < maxLen; i++) {
+                 const inputLabel = inputLabels[i] || '';
+                 const outputLabel = outputLabels[i] || '';
+                 
+                 html += '<tr>';
+                 html += `<td>${inputLabel}</td><td>${inputLabel ? inputValues[inputLabel] : ''}</td>`;
+                 html += `<td>${outputLabel}</td><td>${outputLabel ? outputValues[outputLabel] : ''}</td>`;
+                 html += '</tr>';
+             }
+
+             html += '</tbody></table>';
+             document.getElementById('result-area').innerHTML = html;
+        }
+
+
+        function calculateTruthTable() {
+             if (Object.keys(circuitData.circuit_structure).length === 0) {
+                 alert("Схема пуста.");
+                 return;
+            }
+
+            document.getElementById('result-area').innerHTML = '<h3>Расчет Таблицы Истинности...</h3>';
+            
+            const calculationData = {
+                circuit_structure: circuitData.circuit_structure,
+                connections: circuitData.connections
+            };
+
+            fetch('/calculate_truth_table', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(calculationData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('result-area').innerHTML = 
+                        `<h3 style="color:red;">Ошибка Расчета</h3><p>${data.error}</p>`;
+                } else {
+                    renderTable(data.headers, data.table);
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                document.getElementById('result-area').innerHTML = '<h3 style="color:red;">Произошла ошибка при отправке запроса.</h3>';
+            });
+        }
+
+        function renderTable(headers, tableData) {
+            let html = '<h3>Таблица Истинности</h3><table><thead><tr>';
+            
+            headers.forEach(h => { html += `<th>${h}</th>`; });
+            html += '</tr></thead><tbody>';
+
+            tableData.forEach(row => {
+                html += '<tr>';
+                row.forEach(cell => { html += `<td>${cell}</td>`; });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('result-area').innerHTML = html;
+        }
+
+        // --- 6. ЗАГРУЗКА И ОЧИСТКА СХЕМЫ ---
+        
+        function clearCircuit() {
+            circuitData = { circuit_structure: {}, connections: [], input_state: {} };
+            circuitDisplay.innerHTML = '';
+            blockCounter = 0;
+            ensureSvgContainer();
+            // Повторно добавляем корзину после очистки innerHTML
+            const trashHtml = '<div id="trash-can">TRASH CAN (Drop here to delete)</div>';
+            circuitDisplay.insertAdjacentHTML('beforeend', trashHtml);
+            trashCan = document.getElementById('trash-can');
+            
+            updateAllLines();
+            document.getElementById('result-area').innerHTML = '<h3>Интерактивный Расчет / Таблица Истинности</h3><p>Схема очищена.</p>';
+        }
+
+        function loadTestCircuit() {
+            clearCircuit();
+            // Устанавливаем счетчик так, чтобы следующие блоки начинались с уникальных ID
+            blockCounter = 7; 
+
+            // Схема Z = (NOT A AND B) OR C
+            addBlockManual('A', 'INPUT', 'A', 50, 50);
+            addBlockManual('B', 'INPUT', 'B', 50, 150);
+            addBlockManual('C', 'INPUT', 'C', 50, 250);
+            addBlockManual('N1', 'NOT', 'NOT', 200, 50);
+            addBlockManual('A1', 'AND', 'AND', 350, 100);
+            addBlockManual('O1', 'OR', 'OR', 500, 150);
+            addBlockManual('OUT1', 'OUTPUT', 'Out 1', 650, 150);
+
+            // Обновление circuitData.circuit_structure для manual блоков
+            circuitData.circuit_structure = {
+                "A": {"type": "INPUT", "label": "A"},
+                "B": {"type": "INPUT", "label": "B"},
+                "C": {"type": "INPUT", "label": "C"},
+                "OUT1": {"type": "OUTPUT", "label": "Out 1"},
+                "N1": {"type": "NOT", "label": "NOT"},
+                "A1": {"type": "AND", "label": "AND"},
+                "O1": {"type": "OR", "label": "OR"}
+            };
+            
+            circuitData.connections = [
+                {"from": "A-output1", "to": "N1-input1"},   
+                {"from": "B-output1", "to": "A1-input1"},   
+                {"from": "N1-output1", "to": "A1-input2"},  
+                {"from": "C-output1", "to": "O1-input1"},   
+                {"from": "A1-output1", "to": "O1-input2"},  
+                {"from": "O1-output1", "to": "OUT1-input1"} 
+            ];
+            
+            updateAllLines(); 
+            calculateInteractive(); 
+        }
+
+        window.onload = function() {
+            setupEventListeners();
+            loadTestCircuit(); 
+        }
+    </script>
+
+</body>
+</html>
